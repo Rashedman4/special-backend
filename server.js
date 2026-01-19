@@ -9,6 +9,9 @@ import usersRoutes from "./routes/users.js";
 import walletRoutes from "./routes/wallet.js";
 import postsRoutes from "./routes/posts.js";
 import communitiesRoutes from "./routes/communities.js";
+import adminOverviewRoutes from "./routes/admin/overview.js";
+import adminUsersRoutes from "./routes/admin/users.js";
+import adminCommunitiesRoutes from "./routes/admin/community.js";
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +24,10 @@ app.use("/api/users", usersRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/posts", postsRoutes);
 app.use("/api/communities", communitiesRoutes);
+app.use("/api/admin/overview", adminOverviewRoutes);
+app.use("/api/admin/users", adminUsersRoutes);
+app.use("/api/admin/community", adminCommunitiesRoutes);
+
 app.get("/", (req, res) => res.send("TokenSphere API running"));
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
