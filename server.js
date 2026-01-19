@@ -4,6 +4,7 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 
 import db from "./db.js";
+import authRoutes from "./routes/auth.js";
 
 dotenv.config();
 const app = express();
@@ -12,7 +13,11 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
-
+app.use("/api/auth", authRoutes);
+app.get("/", (req, res) => res.send("TokenSphere API running"));
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
 db.connect()
   .then(() => {
     app.listen(PORT, () =>
