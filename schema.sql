@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS posts (
   content TEXT,
   likes_count INT NOT NULL DEFAULT 0 CHECK (likes_count >= 0),
   comments_count INT NOT NULL DEFAULT 0 CHECK (comments_count >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   
 );
 
