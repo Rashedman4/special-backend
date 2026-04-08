@@ -501,3 +501,210 @@ Response:
 { "message": "User deleted successfully" }
 
 This README documents the available endpoints for the TokenSphere backend and should provide everything you need to get the API up and running locally. Feel free to expand it as you add more functionality!
+
+
+
+
+package com.clinic.specification;
+
+import com.clinic.entity.Patient;
+import com.clinic.filter.PatientFilter;
+import org.springframework.data.jpa.domain.Specification;
+
+public class PatientSpecification {
+
+    public static Specification<Patient> withFilter(PatientFilter filter) {
+        return Specification.where(firstNameContains(filter.getFirstName()))
+                .and(lastNameContains(filter.getLastName()))
+                .and(emailContains(filter.getEmail()))
+                .and(phoneContains(filter.getPhoneNumber()))
+                .and(bloodTypeEquals(filter.getBloodType()))
+                .and(dateOfBirthGreaterThanOrEqual(filter.getDateOfBirthFrom()))
+                .and(dateOfBirthLessThanOrEqual(filter.getDateOfBirthTo()));
+    }
+
+    private static Specification<Patient> firstNameContains(String firstName) {
+        return (root, query, cb) ->
+                firstName == null || firstName.isBlank() ? null :
+                        cb.like(cb.lower(root.get("fName")), "%" + firstName.toLowerCase() + "%");
+    }
+
+    private static Specification<Patient> lastNameContains(String lastName) {
+        return (root, query, cb) ->
+                lastName == null || lastName.isBlank() ? null :
+                        cb.like(cb.lower(root.get("lName")), "%" + lastName.toLowerCase() + "%");
+    }
+
+    private static Specification<Patient> emailContains(String email) {
+        return (root, query, cb) ->
+                email == null || email.isBlank() ? null :
+                        cb.like(cb.lower(root.get("email")), "%" + email.toLowerCase() + "%");
+    }
+
+    private static Specification<Patient> phoneContains(String phone) {
+        return (root, query, cb) ->
+                phone == null || phone.isBlank() ? null :
+                        cb.like(cb.lower(root.get("phoneNumber")), "%" + phone.toLowerCase() + "%");
+    }
+
+    private static Specification<Patient> bloodTypeEquals(String bloodType) {
+        return (root, query, cb) ->
+                bloodType == null || bloodType.isBlank() ? null :
+                        cb.equal(cb.lower(root.get("bloodType")), bloodType.toLowerCase());
+    }
+
+    private static Specification<Patient> dateOfBirthGreaterThanOrEqual(java.time.LocalDate from) {
+        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("dateOfBirth"), from);
+    }
+
+    private static Specification<Patient> dateOfBirthLessThanOrEqual(java.time.LocalDate to) {
+        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("dateOfBirth"), to);
+    }
+}
+
+
+package com.clinic.specification;
+
+import com.clinic.entity.Appointment;
+import com.clinic.filter.AppointmentFilter;
+import org.springframework.data.jpa.domain.Specification;
+
+public class AppointmentSpecification {
+
+    public static Specification<Appointment> withFilter(AppointmentFilter filter) {
+        return Specification.where(hasPatientId(filter.getPatientId()))
+                .and(hasDoctorId(filter.getDoctorId()))
+                .and(hasStatus(filter.getStatus()))
+                .and(dateGreaterThanOrEqual(filter.getDateFrom()))
+                .and(dateLessThanOrEqual(filter.getDateTo()))
+                .and(startGreaterThanOrEqual(filter.getStartFrom()))
+                .and(startLessThanOrEqual(filter.getStartTo()));
+    }
+
+    private static Specification<Appointment> hasPatientId(Long patientId) {
+        return (root, query, cb) -> patientId == null ? null : cb.equal(root.get("patient").get("id"), patientId);
+    }
+
+    private static Specification<Appointment> hasDoctorId(Long doctorId) {
+        return (root, query, cb) -> doctorId == null ? null : cb.equal(root.get("doctor").get("id"), doctorId);
+    }
+
+    private static Specification<Appointment> hasStatus(com.clinic.enums.AppointmentStatus status) {
+        return (root, query, cb) -> status == null ? null : cb.equal(root.get("status"), status);
+    }
+
+    private static Specification<Appointment> dateGreaterThanOrEqual(java.time.LocalDate from) {
+        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentDate"), from);
+    }
+
+    private static Specification<Appointment> dateLessThanOrEqual(java.time.LocalDate to) {
+        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentDate"), to);
+    }
+
+    private static Specification<Appointment> startGreaterThanOrEqual(java.time.LocalTime from) {
+        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentStart"), from);
+    }
+
+    private static Specification<Appointment> startLessThanOrEqual(java.time.LocalTime to) {
+        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentStart"), to);
+    }
+}
+
+
+package com.clinic.specification;
+
+import com.clinic.entity.Drug;
+import com.clinic.filter.DrugFilter;
+import org.springframework.data.jpa.domain.Specification;
+
+public class DrugSpecification {
+
+    public static Specification<Drug> withFilter(DrugFilter filter) {
+        return Specification.where(nameContains(filter.getName()))
+                .and(categoryEquals(filter.getCategory()))
+                .and(priceGreaterThanOrEqual(filter.getMinPrice()))
+                .and(priceLessThanOrEqual(filter.getMaxPrice()))
+                .and(quantityGreaterThanOrEqual(filter.getMinQuantity()))
+                .and(quantityLessThanOrEqual(filter.getMaxQuantity()));
+    }
+
+    private static Specification<Drug> nameContains(String name) {
+        return (root, query, cb) ->
+                name == null || name.isBlank() ? null :
+                        cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%");
+    }
+
+    private static Specification<Drug> categoryEquals(String category) {
+        return (root, query, cb) ->
+                category == null || category.isBlank() ? null :
+                        cb.equal(cb.lower(root.get("category")), category.toLowerCase());
+    }
+
+    private static Specification<Drug> priceGreaterThanOrEqual(java.math.BigDecimal minPrice) {
+        return (root, query, cb) -> minPrice == null ? null : cb.greaterThanOrEqualTo(root.get("price"), minPrice);
+    }
+
+    private static Specification<Drug> priceLessThanOrEqual(java.math.BigDecimal maxPrice) {
+        return (root, query, cb) -> maxPrice == null ? null : cb.lessThanOrEqualTo(root.get("price"), maxPrice);
+    }
+
+    private static Specification<Drug> quantityGreaterThanOrEqual(Integer minQuantity) {
+        return (root, query, cb) -> minQuantity == null ? null : cb.greaterThanOrEqualTo(root.get("quantity"), minQuantity);
+    }
+
+    private static Specification<Drug> quantityLessThanOrEqual(Integer maxQuantity) {
+        return (root, query, cb) -> maxQuantity == null ? null : cb.lessThanOrEqualTo(root.get("quantity"), maxQuantity);
+    }
+}
+
+package com.clinic.specification;
+
+import com.clinic.entity.Invoice;
+import com.clinic.filter.InvoiceFilter;
+import org.springframework.data.jpa.domain.Specification;
+
+public class InvoiceSpecification {
+
+    public static Specification<Invoice> withFilter(InvoiceFilter filter) {
+        return Specification.where(hasPatientId(filter.getPatientId()))
+                .and(hasAppointmentId(filter.getAppointmentId()))
+                .and(hasPaymentStatus(filter.getPaymentStatus()))
+                .and(hasPaymentMethod(filter.getPaymentMethod()))
+                .and(totalGreaterThanOrEqual(filter.getMinTotal()))
+                .and(totalLessThanOrEqual(filter.getMaxTotal()))
+                .and(issueDateGreaterThanOrEqual(filter.getIssueDateFrom()))
+                .and(issueDateLessThanOrEqual(filter.getIssueDateTo()));
+    }
+
+    private static Specification<Invoice> hasPatientId(Long patientId) {
+        return (root, query, cb) -> patientId == null ? null : cb.equal(root.get("appointment").get("patient").get("id"), patientId);
+    }
+
+    private static Specification<Invoice> hasAppointmentId(Long appointmentId) {
+        return (root, query, cb) -> appointmentId == null ? null : cb.equal(root.get("appointment").get("id"), appointmentId);
+    }
+
+    private static Specification<Invoice> hasPaymentStatus(com.clinic.enums.PaymentStatus status) {
+        return (root, query, cb) -> status == null ? null : cb.equal(root.get("paymentStatus"), status);
+    }
+
+    private static Specification<Invoice> hasPaymentMethod(com.clinic.enums.PaymentMethod method) {
+        return (root, query, cb) -> method == null ? null : cb.equal(root.get("paymentMethod"), method);
+    }
+
+    private static Specification<Invoice> totalGreaterThanOrEqual(java.math.BigDecimal minTotal) {
+        return (root, query, cb) -> minTotal == null ? null : cb.greaterThanOrEqualTo(root.get("totalAmount"), minTotal);
+    }
+
+    private static Specification<Invoice> totalLessThanOrEqual(java.math.BigDecimal maxTotal) {
+        return (root, query, cb) -> maxTotal == null ? null : cb.lessThanOrEqualTo(root.get("totalAmount"), maxTotal);
+    }
+
+    private static Specification<Invoice> issueDateGreaterThanOrEqual(java.time.LocalDate from) {
+        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentDate"), from);
+    }
+
+    private static Specification<Invoice> issueDateLessThanOrEqual(java.time.LocalDate to) {
+        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentDate"), to);
+    }
+}
