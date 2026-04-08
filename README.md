@@ -505,206 +505,256 @@ This README documents the available endpoints for the TokenSphere backend and sh
 
 
 
-package com.clinic.specification;
-
-import com.clinic.entity.Patient;
-import com.clinic.filter.PatientFilter;
-import org.springframework.data.jpa.domain.Specification;
-
-public class PatientSpecification {
-
-    public static Specification<Patient> withFilter(PatientFilter filter) {
-        return Specification.where(firstNameContains(filter.getFirstName()))
-                .and(lastNameContains(filter.getLastName()))
-                .and(emailContains(filter.getEmail()))
-                .and(phoneContains(filter.getPhoneNumber()))
-                .and(bloodTypeEquals(filter.getBloodType()))
-                .and(dateOfBirthGreaterThanOrEqual(filter.getDateOfBirthFrom()))
-                .and(dateOfBirthLessThanOrEqual(filter.getDateOfBirthTo()));
-    }
-
-    private static Specification<Patient> firstNameContains(String firstName) {
-        return (root, query, cb) ->
-                firstName == null || firstName.isBlank() ? null :
-                        cb.like(cb.lower(root.get("fName")), "%" + firstName.toLowerCase() + "%");
-    }
-
-    private static Specification<Patient> lastNameContains(String lastName) {
-        return (root, query, cb) ->
-                lastName == null || lastName.isBlank() ? null :
-                        cb.like(cb.lower(root.get("lName")), "%" + lastName.toLowerCase() + "%");
-    }
-
-    private static Specification<Patient> emailContains(String email) {
-        return (root, query, cb) ->
-                email == null || email.isBlank() ? null :
-                        cb.like(cb.lower(root.get("email")), "%" + email.toLowerCase() + "%");
-    }
-
-    private static Specification<Patient> phoneContains(String phone) {
-        return (root, query, cb) ->
-                phone == null || phone.isBlank() ? null :
-                        cb.like(cb.lower(root.get("phoneNumber")), "%" + phone.toLowerCase() + "%");
-    }
-
-    private static Specification<Patient> bloodTypeEquals(String bloodType) {
-        return (root, query, cb) ->
-                bloodType == null || bloodType.isBlank() ? null :
-                        cb.equal(cb.lower(root.get("bloodType")), bloodType.toLowerCase());
-    }
-
-    private static Specification<Patient> dateOfBirthGreaterThanOrEqual(java.time.LocalDate from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("dateOfBirth"), from);
-    }
-
-    private static Specification<Patient> dateOfBirthLessThanOrEqual(java.time.LocalDate to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("dateOfBirth"), to);
-    }
-}
-
-
-package com.clinic.specification;
+package com.clinic.service.impl;
 
 import com.clinic.entity.Appointment;
+import com.clinic.entity.Doctor;
+import com.clinic.entity.Patient;
+import com.clinic.enums.AppointmentStatus;
 import com.clinic.filter.AppointmentFilter;
-import org.springframework.data.jpa.domain.Specification;
+import com.clinic.repository.AppointmentRepository;
+import com.clinic.repository.DoctorRepository;
+import com.clinic.repository.PatientRepository;
+import com.clinic.service.AppointmentService;
+import com.clinic.specification.AppointmentSpecification;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-public class AppointmentSpecification {
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
 
-    public static Specification<Appointment> withFilter(AppointmentFilter filter) {
-        return Specification.where(hasPatientId(filter.getPatientId()))
-                .and(hasDoctorId(filter.getDoctorId()))
-                .and(hasStatus(filter.getStatus()))
-                .and(dateGreaterThanOrEqual(filter.getDateFrom()))
-                .and(dateLessThanOrEqual(filter.getDateTo()))
-                .and(startGreaterThanOrEqual(filter.getStartFrom()))
-                .and(startLessThanOrEqual(filter.getStartTo()));
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class AppointmentServiceImpl implements AppointmentService {
+
+    private final AppointmentRepository appointmentRepository;
+    private final DoctorRepository doctorRepository;
+    private final PatientRepository patientRepository;
+
+    @Override
+    public Appointment create(Appointment appointment) {
+        validateAppointmentForCreateOrUpdate(appointment);
+
+        Long doctorId = appointment.getDoctor().getId();
+        Long patientId = appointment.getPatient().getId();
+
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
+
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
+
+        boolean available = isDoctorAvailable(
+                doctor.getId(),
+                appointment.getAppointmentDate(),
+                appointment.getAppointmentStart(),
+                appointment.getAppointmentEnd()
+        );
+
+        if (!available) {
+            throw new IllegalArgumentException("Doctor is not available at the selected date and time");
+        }
+
+        appointment.setDoctor(doctor);
+        appointment.setPatient(patient);
+
+        if (appointment.getStatus() == null) {
+            appointment.setStatus(AppointmentStatus.PENDING);
+        }
+
+        return appointmentRepository.save(appointment);
     }
 
-    private static Specification<Appointment> hasPatientId(Long patientId) {
-        return (root, query, cb) -> patientId == null ? null : cb.equal(root.get("patient").get("id"), patientId);
+    @Override
+    public Appointment update(Long id, Appointment appointment) {
+        Appointment existing = getById(id);
+
+        validateAppointmentForCreateOrUpdate(appointment);
+
+        Long doctorId = appointment.getDoctor().getId();
+        Long patientId = appointment.getPatient().getId();
+
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
+
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
+
+        boolean hasConflict = appointmentRepository
+                .existsByDoctorIdAndAppointmentDateAndAppointmentStartLessThanAndAppointmentEndGreaterThanAndIdNot(
+                        doctorId,
+                        appointment.getAppointmentDate(),
+                        appointment.getAppointmentEnd(),
+                        appointment.getAppointmentStart(),
+                        id
+                );
+
+        if (hasConflict) {
+            throw new IllegalArgumentException("Doctor is not available at the selected date and time");
+        }
+
+        validateDoctorWorkingHours(
+                doctor,
+                appointment.getAppointmentStart(),
+                appointment.getAppointmentEnd()
+        );
+
+        existing.setAppointmentDate(appointment.getAppointmentDate());
+        existing.setAppointmentStart(appointment.getAppointmentStart());
+        existing.setAppointmentEnd(appointment.getAppointmentEnd());
+        existing.setStatus(appointment.getStatus() != null ? appointment.getStatus() : existing.getStatus());
+        existing.setNote(appointment.getNote());
+        existing.setDoctor(doctor);
+        existing.setPatient(patient);
+
+        return appointmentRepository.save(existing);
     }
 
-    private static Specification<Appointment> hasDoctorId(Long doctorId) {
-        return (root, query, cb) -> doctorId == null ? null : cb.equal(root.get("doctor").get("id"), doctorId);
+    @Override
+    @Transactional(readOnly = true)
+    public Appointment getById(Long id) {
+        return appointmentRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + id));
     }
 
-    private static Specification<Appointment> hasStatus(com.clinic.enums.AppointmentStatus status) {
-        return (root, query, cb) -> status == null ? null : cb.equal(root.get("status"), status);
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Appointment> getAll(AppointmentFilter filter, Pageable pageable) {
+        if (filter == null) {
+            filter = new AppointmentFilter();
+        }
+        return appointmentRepository.findAll(AppointmentSpecification.withFilter(filter), pageable);
     }
 
-    private static Specification<Appointment> dateGreaterThanOrEqual(java.time.LocalDate from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentDate"), from);
+    @Override
+    public void delete(Long id) {
+        Appointment appointment = getById(id);
+        appointmentRepository.delete(appointment);
     }
 
-    private static Specification<Appointment> dateLessThanOrEqual(java.time.LocalDate to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentDate"), to);
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isDoctorAvailable(Long doctorId, LocalDate date, LocalTime start, LocalTime end) {
+        if (doctorId == null) {
+            throw new IllegalArgumentException("Doctor id must not be null");
+        }
+        if (date == null) {
+            throw new IllegalArgumentException("Appointment date must not be null");
+        }
+        if (start == null || end == null) {
+            throw new IllegalArgumentException("Appointment start and end time must not be null");
+        }
+        if (!start.isBefore(end)) {
+            throw new IllegalArgumentException("Appointment start time must be before end time");
+        }
+
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
+
+        validateDoctorWorkingHours(doctor, start, end);
+
+        return !appointmentRepository
+                .existsByDoctorIdAndAppointmentDateAndAppointmentStartLessThanAndAppointmentEndGreaterThan(
+                        doctorId,
+                        date,
+                        end,
+                        start
+                );
     }
 
-    private static Specification<Appointment> startGreaterThanOrEqual(java.time.LocalTime from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentStart"), from);
+    @Override
+    public Appointment approve(Long id) {
+        Appointment appointment = getById(id);
+
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException("Cancelled appointment cannot be approved");
+        }
+
+        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
+            throw new IllegalStateException("Completed appointment cannot be approved");
+        }
+
+        appointment.setStatus(AppointmentStatus.APPROVED);
+        return appointmentRepository.save(appointment);
     }
 
-    private static Specification<Appointment> startLessThanOrEqual(java.time.LocalTime to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentStart"), to);
-    }
-}
+    @Override
+    public Appointment cancel(Long id) {
+        Appointment appointment = getById(id);
 
+        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
+            throw new IllegalStateException("Completed appointment cannot be cancelled");
+        }
 
-package com.clinic.specification;
-
-import com.clinic.entity.Drug;
-import com.clinic.filter.DrugFilter;
-import org.springframework.data.jpa.domain.Specification;
-
-public class DrugSpecification {
-
-    public static Specification<Drug> withFilter(DrugFilter filter) {
-        return Specification.where(nameContains(filter.getName()))
-                .and(categoryEquals(filter.getCategory()))
-                .and(priceGreaterThanOrEqual(filter.getMinPrice()))
-                .and(priceLessThanOrEqual(filter.getMaxPrice()))
-                .and(quantityGreaterThanOrEqual(filter.getMinQuantity()))
-                .and(quantityLessThanOrEqual(filter.getMaxQuantity()));
+        appointment.setStatus(AppointmentStatus.CANCELLED);
+        return appointmentRepository.save(appointment);
     }
 
-    private static Specification<Drug> nameContains(String name) {
-        return (root, query, cb) ->
-                name == null || name.isBlank() ? null :
-                        cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%");
+    @Override
+    public Appointment complete(Long id) {
+        Appointment appointment = getById(id);
+
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException("Cancelled appointment cannot be completed");
+        }
+
+        appointment.setStatus(AppointmentStatus.COMPLETED);
+        return appointmentRepository.save(appointment);
     }
 
-    private static Specification<Drug> categoryEquals(String category) {
-        return (root, query, cb) ->
-                category == null || category.isBlank() ? null :
-                        cb.equal(cb.lower(root.get("category")), category.toLowerCase());
+    @Override
+    @Transactional(readOnly = true)
+    public List<Appointment> getDoctorAppointmentsByDate(Long doctorId, LocalDate date) {
+        if (doctorId == null) {
+            throw new IllegalArgumentException("Doctor id must not be null");
+        }
+        if (date == null) {
+            throw new IllegalArgumentException("Date must not be null");
+        }
+
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
+
+        return appointmentRepository.findByDoctorAndAppointmentDate(doctor, date);
     }
 
-    private static Specification<Drug> priceGreaterThanOrEqual(java.math.BigDecimal minPrice) {
-        return (root, query, cb) -> minPrice == null ? null : cb.greaterThanOrEqualTo(root.get("price"), minPrice);
+    private void validateAppointmentForCreateOrUpdate(Appointment appointment) {
+        if (appointment == null) {
+            throw new IllegalArgumentException("Appointment must not be null");
+        }
+        if (appointment.getDoctor() == null || appointment.getDoctor().getId() == null) {
+            throw new IllegalArgumentException("Doctor must not be null");
+        }
+        if (appointment.getPatient() == null || appointment.getPatient().getId() == null) {
+            throw new IllegalArgumentException("Patient must not be null");
+        }
+        if (appointment.getAppointmentDate() == null) {
+            throw new IllegalArgumentException("Appointment date must not be null");
+        }
+        if (appointment.getAppointmentStart() == null || appointment.getAppointmentEnd() == null) {
+            throw new IllegalArgumentException("Appointment start and end time must not be null");
+        }
+        if (!appointment.getAppointmentStart().isBefore(appointment.getAppointmentEnd())) {
+            throw new IllegalArgumentException("Appointment start time must be before end time");
+        }
     }
 
-    private static Specification<Drug> priceLessThanOrEqual(java.math.BigDecimal maxPrice) {
-        return (root, query, cb) -> maxPrice == null ? null : cb.lessThanOrEqualTo(root.get("price"), maxPrice);
-    }
+    private void validateDoctorWorkingHours(Doctor doctor, LocalTime start, LocalTime end) {
+        if (doctor.getStartingWorkingHour() == null || doctor.getEndingWorkingHour() == null) {
+            throw new IllegalStateException("Doctor working hours are not configured");
+        }
 
-    private static Specification<Drug> quantityGreaterThanOrEqual(Integer minQuantity) {
-        return (root, query, cb) -> minQuantity == null ? null : cb.greaterThanOrEqualTo(root.get("quantity"), minQuantity);
-    }
+        boolean startsWithinHours = !start.isBefore(doctor.getStartingWorkingHour());
+        boolean endsWithinHours = !end.isAfter(doctor.getEndingWorkingHour());
 
-    private static Specification<Drug> quantityLessThanOrEqual(Integer maxQuantity) {
-        return (root, query, cb) -> maxQuantity == null ? null : cb.lessThanOrEqualTo(root.get("quantity"), maxQuantity);
-    }
-}
-
-package com.clinic.specification;
-
-import com.clinic.entity.Invoice;
-import com.clinic.filter.InvoiceFilter;
-import org.springframework.data.jpa.domain.Specification;
-
-public class InvoiceSpecification {
-
-    public static Specification<Invoice> withFilter(InvoiceFilter filter) {
-        return Specification.where(hasPatientId(filter.getPatientId()))
-                .and(hasAppointmentId(filter.getAppointmentId()))
-                .and(hasPaymentStatus(filter.getPaymentStatus()))
-                .and(hasPaymentMethod(filter.getPaymentMethod()))
-                .and(totalGreaterThanOrEqual(filter.getMinTotal()))
-                .and(totalLessThanOrEqual(filter.getMaxTotal()))
-                .and(issueDateGreaterThanOrEqual(filter.getIssueDateFrom()))
-                .and(issueDateLessThanOrEqual(filter.getIssueDateTo()));
-    }
-
-    private static Specification<Invoice> hasPatientId(Long patientId) {
-        return (root, query, cb) -> patientId == null ? null : cb.equal(root.get("appointment").get("patient").get("id"), patientId);
-    }
-
-    private static Specification<Invoice> hasAppointmentId(Long appointmentId) {
-        return (root, query, cb) -> appointmentId == null ? null : cb.equal(root.get("appointment").get("id"), appointmentId);
-    }
-
-    private static Specification<Invoice> hasPaymentStatus(com.clinic.enums.PaymentStatus status) {
-        return (root, query, cb) -> status == null ? null : cb.equal(root.get("paymentStatus"), status);
-    }
-
-    private static Specification<Invoice> hasPaymentMethod(com.clinic.enums.PaymentMethod method) {
-        return (root, query, cb) -> method == null ? null : cb.equal(root.get("paymentMethod"), method);
-    }
-
-    private static Specification<Invoice> totalGreaterThanOrEqual(java.math.BigDecimal minTotal) {
-        return (root, query, cb) -> minTotal == null ? null : cb.greaterThanOrEqualTo(root.get("totalAmount"), minTotal);
-    }
-
-    private static Specification<Invoice> totalLessThanOrEqual(java.math.BigDecimal maxTotal) {
-        return (root, query, cb) -> maxTotal == null ? null : cb.lessThanOrEqualTo(root.get("totalAmount"), maxTotal);
-    }
-
-    private static Specification<Invoice> issueDateGreaterThanOrEqual(java.time.LocalDate from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentDate"), from);
-    }
-
-    private static Specification<Invoice> issueDateLessThanOrEqual(java.time.LocalDate to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentDate"), to);
+        if (!startsWithinHours || !endsWithinHours) {
+            throw new IllegalArgumentException("Appointment must be within doctor's working hours");
+        }
     }
 }
