@@ -504,19 +504,14 @@ This README documents the available endpoints for the TokenSphere backend and sh
 
 
 
-
+-----------------------
 package com.clinic.service.impl;
 
-import com.clinic.entity.Appointment;
 import com.clinic.entity.Doctor;
-import com.clinic.entity.Patient;
-import com.clinic.enums.AppointmentStatus;
-import com.clinic.filter.AppointmentFilter;
-import com.clinic.repository.AppointmentRepository;
+import com.clinic.filter.DoctorFilter;
 import com.clinic.repository.DoctorRepository;
-import com.clinic.repository.PatientRepository;
-import com.clinic.service.AppointmentService;
-import com.clinic.specification.AppointmentSpecification;
+import com.clinic.service.DoctorService;
+import com.clinic.specification.DoctorSpecification;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -524,285 +519,631 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class AppointmentServiceImpl implements AppointmentService {
+public class DoctorServiceImpl implements DoctorService {
 
-    private final AppointmentRepository appointmentRepository;
     private final DoctorRepository doctorRepository;
-    private final PatientRepository patientRepository;
 
     @Override
-    public Appointment create(Appointment appointment) {
-        validateAppointmentForCreateOrUpdate(appointment);
-
-        Long doctorId = appointment.getDoctor().getId();
-        Long patientId = appointment.getPatient().getId();
-
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
-
-        Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
-
-        boolean available = isDoctorAvailable(
-                doctor.getId(),
-                appointment.getAppointmentDate(),
-                appointment.getAppointmentStart(),
-                appointment.getAppointmentEnd()
-        );
-
-        if (!available) {
-            throw new IllegalArgumentException("Doctor is not available at the selected date and time");
+    public Doctor create(Doctor doctor) {
+        if (doctor == null) {
+            throw new IllegalArgumentException("Doctor must not be null");
+        }
+        if (doctor.getLicenseNumber() == null || doctor.getLicenseNumber().isBlank()) {
+            throw new IllegalArgumentException("License number must not be blank");
+        }
+        if (doctorRepository.existsByLicenseNumber(doctor.getLicenseNumber())) {
+            throw new IllegalArgumentException("Doctor with this license number already exists");
         }
 
-        appointment.setDoctor(doctor);
-        appointment.setPatient(patient);
-
-        if (appointment.getStatus() == null) {
-            appointment.setStatus(AppointmentStatus.PENDING);
-        }
-
-        return appointmentRepository.save(appointment);
+        return doctorRepository.save(doctor);
     }
 
     @Override
-    public Appointment update(Long id, Appointment appointment) {
-        Appointment existing = getById(id);
-
-        validateAppointmentForCreateOrUpdate(appointment);
-
-        Long doctorId = appointment.getDoctor().getId();
-        Long patientId = appointment.getPatient().getId();
-
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
-
-        Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
-
-        boolean hasConflict = appointmentRepository
-                .existsByDoctorIdAndAppointmentDateAndAppointmentStartLessThanAndAppointmentEndGreaterThanAndIdNot(
-                        doctorId,
-                        appointment.getAppointmentDate(),
-                        appointment.getAppointmentEnd(),
-                        appointment.getAppointmentStart(),
-                        id
-                );
-
-        if (hasConflict) {
-            throw new IllegalArgumentException("Doctor is not available at the selected date and time");
+    public Doctor update(Long id, Doctor doctor) {
+        if (doctor == null) {
+            throw new IllegalArgumentException("Doctor must not be null");
         }
 
-        validateDoctorWorkingHours(
-                doctor,
-                appointment.getAppointmentStart(),
-                appointment.getAppointmentEnd()
-        );
+        Doctor existing = getById(id);
 
-        existing.setAppointmentDate(appointment.getAppointmentDate());
-        existing.setAppointmentStart(appointment.getAppointmentStart());
-        existing.setAppointmentEnd(appointment.getAppointmentEnd());
-        existing.setStatus(appointment.getStatus() != null ? appointment.getStatus() : existing.getStatus());
-        existing.setNote(appointment.getNote());
-        existing.setDoctor(doctor);
-        existing.setPatient(patient);
+        if (doctor.getLicenseNumber() != null
+                && !doctor.getLicenseNumber().equals(existing.getLicenseNumber())
+                && doctorRepository.existsByLicenseNumber(doctor.getLicenseNumber())) {
+            throw new IllegalArgumentException("Doctor with this license number already exists");
+        }
 
-        return appointmentRepository.save(existing);
+        existing.setFName(doctor.getFName());
+        existing.setLName(doctor.getLName());
+        existing.setEmail(doctor.getEmail());
+        existing.setGender(doctor.getGender());
+        existing.setPhoneNumber(doctor.getPhoneNumber());
+        existing.setUsername(doctor.getUsername());
+        existing.setPassword(doctor.getPassword());
+        existing.setRole(doctor.getRole());
+        existing.setSpecialization(doctor.getSpecialization());
+        existing.setLicenseNumber(doctor.getLicenseNumber());
+        existing.setStartingWorkingHour(doctor.getStartingWorkingHour());
+        existing.setEndingWorkingHour(doctor.getEndingWorkingHour());
+
+        return doctorRepository.save(existing);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Appointment getById(Long id) {
-        return appointmentRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + id));
+    public Doctor getById(Long id) {
+        return doctorRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + id));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<Appointment> getAll(AppointmentFilter filter, Pageable pageable) {
+    public Page<Doctor> getAll(DoctorFilter filter, Pageable pageable) {
         if (filter == null) {
-            filter = new AppointmentFilter();
+            filter = new DoctorFilter();
         }
-        return appointmentRepository.findAll(AppointmentSpecification.withFilter(filter), pageable);
+        return doctorRepository.findAll(DoctorSpecification.withFilter(filter), pageable);
     }
 
     @Override
     public void delete(Long id) {
-        Appointment appointment = getById(id);
-        appointmentRepository.delete(appointment);
+        Doctor doctor = getById(id);
+        doctorRepository.delete(doctor);
     }
+}
+
+
+package com.clinic.service.impl;
+
+import com.clinic.entity.Patient;
+import com.clinic.filter.PatientFilter;
+import com.clinic.repository.PatientRepository;
+import com.clinic.service.PatientService;
+import com.clinic.specification.PatientSpecification;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class PatientServiceImpl implements PatientService {
+
+    private final PatientRepository patientRepository;
 
     @Override
-    @Transactional(readOnly = true)
-    public boolean isDoctorAvailable(Long doctorId, LocalDate date, LocalTime start, LocalTime end) {
-        if (doctorId == null) {
-            throw new IllegalArgumentException("Doctor id must not be null");
-        }
-        if (date == null) {
-            throw new IllegalArgumentException("Appointment date must not be null");
-        }
-        if (start == null || end == null) {
-            throw new IllegalArgumentException("Appointment start and end time must not be null");
-        }
-        if (!start.isBefore(end)) {
-            throw new IllegalArgumentException("Appointment start time must be before end time");
-        }
-
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
-
-        validateDoctorWorkingHours(doctor, start, end);
-
-        return !appointmentRepository
-                .existsByDoctorIdAndAppointmentDateAndAppointmentStartLessThanAndAppointmentEndGreaterThan(
-                        doctorId,
-                        date,
-                        end,
-                        start
-                );
-    }
-
-    @Override
-    public Appointment approve(Long id) {
-        Appointment appointment = getById(id);
-
-        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
-            throw new IllegalStateException("Cancelled appointment cannot be approved");
-        }
-
-        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
-            throw new IllegalStateException("Completed appointment cannot be approved");
-        }
-
-        appointment.setStatus(AppointmentStatus.APPROVED);
-        return appointmentRepository.save(appointment);
-    }
-
-    @Override
-    public Appointment cancel(Long id) {
-        Appointment appointment = getById(id);
-
-        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
-            throw new IllegalStateException("Completed appointment cannot be cancelled");
-        }
-
-        appointment.setStatus(AppointmentStatus.CANCELLED);
-        return appointmentRepository.save(appointment);
-    }
-
-    @Override
-    public Appointment complete(Long id) {
-        Appointment appointment = getById(id);
-
-        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
-            throw new IllegalStateException("Cancelled appointment cannot be completed");
-        }
-
-        appointment.setStatus(AppointmentStatus.COMPLETED);
-        return appointmentRepository.save(appointment);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<Appointment> getDoctorAppointmentsByDate(Long doctorId, LocalDate date) {
-        if (doctorId == null) {
-            throw new IllegalArgumentException("Doctor id must not be null");
-        }
-        if (date == null) {
-            throw new IllegalArgumentException("Date must not be null");
-        }
-
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new EntityNotFoundException("Doctor not found with id: " + doctorId));
-
-        return appointmentRepository.findByDoctorAndAppointmentDate(doctor, date);
-    }
-
-    private void validateAppointmentForCreateOrUpdate(Appointment appointment) {
-        if (appointment == null) {
-            throw new IllegalArgumentException("Appointment must not be null");
-        }
-        if (appointment.getDoctor() == null || appointment.getDoctor().getId() == null) {
-            throw new IllegalArgumentException("Doctor must not be null");
-        }
-        if (appointment.getPatient() == null || appointment.getPatient().getId() == null) {
+    public Patient create(Patient patient) {
+        if (patient == null) {
             throw new IllegalArgumentException("Patient must not be null");
         }
-        if (appointment.getAppointmentDate() == null) {
-            throw new IllegalArgumentException("Appointment date must not be null");
+        if (patient.getEmail() != null && patientRepository.existsByEmail(patient.getEmail())) {
+            throw new IllegalArgumentException("Patient with this email already exists");
         }
-        if (appointment.getAppointmentStart() == null || appointment.getAppointmentEnd() == null) {
-            throw new IllegalArgumentException("Appointment start and end time must not be null");
-        }
-        if (!appointment.getAppointmentStart().isBefore(appointment.getAppointmentEnd())) {
-            throw new IllegalArgumentException("Appointment start time must be before end time");
-        }
+
+        return patientRepository.save(patient);
     }
 
-    private void validateDoctorWorkingHours(Doctor doctor, LocalTime start, LocalTime end) {
-        if (doctor.getStartingWorkingHour() == null || doctor.getEndingWorkingHour() == null) {
-            throw new IllegalStateException("Doctor working hours are not configured");
+    @Override
+    public Patient update(Long id, Patient patient) {
+        if (patient == null) {
+            throw new IllegalArgumentException("Patient must not be null");
         }
 
-        boolean startsWithinHours = !start.isBefore(doctor.getStartingWorkingHour());
-        boolean endsWithinHours = !end.isAfter(doctor.getEndingWorkingHour());
+        Patient existing = getById(id);
 
-        if (!startsWithinHours || !endsWithinHours) {
-            throw new IllegalArgumentException("Appointment must be within doctor's working hours");
+        if (patient.getEmail() != null
+                && !patient.getEmail().equalsIgnoreCase(existing.getEmail())
+                && patientRepository.existsByEmail(patient.getEmail())) {
+            throw new IllegalArgumentException("Patient with this email already exists");
+        }
+
+        existing.setFName(patient.getFName());
+        existing.setLName(patient.getLName());
+        existing.setEmail(patient.getEmail());
+        existing.setGender(patient.getGender());
+        existing.setPhoneNumber(patient.getPhoneNumber());
+        existing.setBloodType(patient.getBloodType());
+        existing.setAllergies(patient.getAllergies());
+        existing.setDateOfBirth(patient.getDateOfBirth());
+
+        return patientRepository.save(existing);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Patient getById(Long id) {
+        return patientRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Patient> getAll(PatientFilter filter, Pageable pageable) {
+        if (filter == null) {
+            filter = new PatientFilter();
+        }
+        return patientRepository.findAll(PatientSpecification.withFilter(filter), pageable);
+    }
+
+    @Override
+    public void delete(Long id) {
+        Patient patient = getById(id);
+        patientRepository.delete(patient);
+    }
+}
+
+package com.clinic.service.impl;
+
+import com.clinic.entity.Receptionist;
+import com.clinic.repository.ReceptionistRepository;
+import com.clinic.service.ReceptionistService;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class ReceptionistServiceImpl implements ReceptionistService {
+
+    private final ReceptionistRepository receptionistRepository;
+
+    @Override
+    public Receptionist create(Receptionist receptionist) {
+        if (receptionist == null) {
+            throw new IllegalArgumentException("Receptionist must not be null");
+        }
+        if (receptionist.getUsername() == null || receptionist.getUsername().isBlank()) {
+            throw new IllegalArgumentException("Username must not be blank");
+        }
+        if (receptionistRepository.existsByUsername(receptionist.getUsername())) {
+            throw new IllegalArgumentException("Receptionist with this username already exists");
+        }
+
+        return receptionistRepository.save(receptionist);
+    }
+
+    @Override
+    public Receptionist update(Long id, Receptionist receptionist) {
+        if (receptionist == null) {
+            throw new IllegalArgumentException("Receptionist must not be null");
+        }
+
+        Receptionist existing = getById(id);
+
+        if (receptionist.getUsername() != null
+                && !receptionist.getUsername().equals(existing.getUsername())
+                && receptionistRepository.existsByUsername(receptionist.getUsername())) {
+            throw new IllegalArgumentException("Receptionist with this username already exists");
+        }
+
+        existing.setFName(receptionist.getFName());
+        existing.setLName(receptionist.getLName());
+        existing.setEmail(receptionist.getEmail());
+        existing.setGender(receptionist.getGender());
+        existing.setPhoneNumber(receptionist.getPhoneNumber());
+        existing.setUsername(receptionist.getUsername());
+        existing.setPassword(receptionist.getPassword());
+        existing.setRole(receptionist.getRole());
+        existing.setDeskNumber(receptionist.getDeskNumber());
+
+        return receptionistRepository.save(existing);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Receptionist getById(Long id) {
+        return receptionistRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Receptionist not found with id: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Receptionist> getAll(Pageable pageable) {
+        return receptionistRepository.findAll(pageable);
+    }
+
+    @Override
+    public void delete(Long id) {
+        Receptionist receptionist = getById(id);
+        receptionistRepository.delete(receptionist);
+    }
+}
+
+package com.clinic.service.impl;
+
+import com.clinic.entity.Drug;
+import com.clinic.filter.DrugFilter;
+import com.clinic.repository.DrugRepository;
+import com.clinic.service.DrugService;
+import com.clinic.specification.DrugSpecification;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class DrugServiceImpl implements DrugService {
+
+    private final DrugRepository drugRepository;
+
+    @Override
+    public Drug create(Drug drug) {
+        if (drug == null) {
+            throw new IllegalArgumentException("Drug must not be null");
+        }
+        if (drug.getName() == null || drug.getName().isBlank()) {
+            throw new IllegalArgumentException("Drug name must not be blank");
+        }
+        if (drugRepository.existsByNameIgnoreCase(drug.getName())) {
+            throw new IllegalArgumentException("Drug with this name already exists");
+        }
+
+        return drugRepository.save(drug);
+    }
+
+    @Override
+    public Drug update(Long id, Drug drug) {
+        if (drug == null) {
+            throw new IllegalArgumentException("Drug must not be null");
+        }
+
+        Drug existing = getById(id);
+
+        if (drug.getName() != null
+                && !drug.getName().equalsIgnoreCase(existing.getName())
+                && drugRepository.existsByNameIgnoreCase(drug.getName())) {
+            throw new IllegalArgumentException("Drug with this name already exists");
+        }
+
+        existing.setName(drug.getName());
+        existing.setDescription(drug.getDescription());
+        existing.setPrice(drug.getPrice());
+        existing.setCategory(drug.getCategory());
+        existing.setQuantity(drug.getQuantity());
+
+        return drugRepository.save(existing);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Drug getById(Long id) {
+        return drugRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Drug not found with id: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Drug> getAll(DrugFilter filter, Pageable pageable) {
+        if (filter == null) {
+            filter = new DrugFilter();
+        }
+        return drugRepository.findAll(DrugSpecification.withFilter(filter), pageable);
+    }
+
+    @Override
+    public void delete(Long id) {
+        Drug drug = getById(id);
+        drugRepository.delete(drug);
+    }
+
+    @Override
+    public Drug updatePrice(Long id, BigDecimal newPrice) {
+        if (newPrice == null || newPrice.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Price must be non-negative");
+        }
+
+        Drug drug = getById(id);
+        drug.setPrice(newPrice);
+        return drugRepository.save(drug);
+    }
+
+    @Override
+    public Drug updateQuantity(Long id, Integer quantity) {
+        if (quantity == null || quantity < 0) {
+            throw new IllegalArgumentException("Quantity must be non-negative");
+        }
+
+        Drug drug = getById(id);
+        drug.setQuantity(quantity);
+        return drugRepository.save(drug);
+    }
+}
+
+package com.clinic.service.impl;
+
+import com.clinic.entity.MedicalRecord;
+import com.clinic.entity.Patient;
+import com.clinic.repository.MedicalRecordRepository;
+import com.clinic.repository.PatientRepository;
+import com.clinic.service.MedicalRecordService;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class MedicalRecordServiceImpl implements MedicalRecordService {
+
+    private final MedicalRecordRepository medicalRecordRepository;
+    private final PatientRepository patientRepository;
+
+    @Override
+    public MedicalRecord create(MedicalRecord medicalRecord) {
+        validateMedicalRecord(medicalRecord);
+
+        Long patientId = medicalRecord.getPatient().getId();
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
+
+        medicalRecord.setPatient(patient);
+        return medicalRecordRepository.save(medicalRecord);
+    }
+
+    @Override
+    public MedicalRecord update(Long id, MedicalRecord medicalRecord) {
+        validateMedicalRecord(medicalRecord);
+
+        MedicalRecord existing = getById(id);
+
+        Long patientId = medicalRecord.getPatient().getId();
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new EntityNotFoundException("Patient not found with id: " + patientId));
+
+        existing.setDiagnosis(medicalRecord.getDiagnosis());
+        existing.setNote(medicalRecord.getNote());
+        existing.setRecordDate(medicalRecord.getRecordDate());
+        existing.setPatient(patient);
+
+        return medicalRecordRepository.save(existing);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public MedicalRecord getById(Long id) {
+        return medicalRecordRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Medical record not found with id: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<MedicalRecord> getAll(Pageable pageable) {
+        return medicalRecordRepository.findAll(pageable);
+    }
+
+    @Override
+    public void delete(Long id) {
+        MedicalRecord medicalRecord = getById(id);
+        medicalRecordRepository.delete(medicalRecord);
+    }
+
+    private void validateMedicalRecord(MedicalRecord medicalRecord) {
+        if (medicalRecord == null) {
+            throw new IllegalArgumentException("Medical record must not be null");
+        }
+        if (medicalRecord.getPatient() == null || medicalRecord.getPatient().getId() == null) {
+            throw new IllegalArgumentException("Patient must not be null");
+        }
+        if (medicalRecord.getRecordDate() == null) {
+            throw new IllegalArgumentException("Record date must not be null");
         }
     }
 }
 
 
-package com.clinic.specification;
+package com.clinic.service.impl;
 
 import com.clinic.entity.Appointment;
-import com.clinic.filter.AppointmentFilter;
-import org.springframework.data.jpa.domain.Specification;
+import com.clinic.entity.Prescription;
+import com.clinic.repository.AppointmentRepository;
+import com.clinic.repository.PrescriptionRepository;
+import com.clinic.service.PrescriptionService;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-public class AppointmentSpecification {
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class PrescriptionServiceImpl implements PrescriptionService {
 
-    public static Specification<Appointment> withFilter(AppointmentFilter filter) {
-        return Specification.where(hasPatientId(filter.getPatientId()))
-                .and(hasDoctorId(filter.getDoctorId()))
-                .and(hasStatus(filter.getStatus()))
-                .and(dateGreaterThanOrEqual(filter.getDateFrom()))
-                .and(dateLessThanOrEqual(filter.getDateTo()))
-                .and(startGreaterThanOrEqual(filter.getStartFrom()))
-                .and(startLessThanOrEqual(filter.getStartTo()));
+    private final PrescriptionRepository prescriptionRepository;
+    private final AppointmentRepository appointmentRepository;
+
+    @Override
+    public Prescription create(Prescription prescription) {
+        validatePrescription(prescription);
+
+        Long appointmentId = prescription.getAppointment().getId();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + appointmentId));
+
+        prescription.setAppointment(appointment);
+        return prescriptionRepository.save(prescription);
     }
 
-    private static Specification<Appointment> hasPatientId(Long patientId) {
-        return (root, query, cb) -> patientId == null ? null : cb.equal(root.get("patient").get("id"), patientId);
+    @Override
+    public Prescription update(Long id, Prescription prescription) {
+        validatePrescription(prescription);
+
+        Prescription existing = getById(id);
+
+        Long appointmentId = prescription.getAppointment().getId();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + appointmentId));
+
+        existing.setAppointment(appointment);
+        existing.setDrugIntake(prescription.getDrugIntake()); // rename if your field is different
+
+        return prescriptionRepository.save(existing);
     }
 
-    private static Specification<Appointment> hasDoctorId(Long doctorId) {
-        return (root, query, cb) -> doctorId == null ? null : cb.equal(root.get("doctor").get("id"), doctorId);
+    @Override
+    @Transactional(readOnly = true)
+    public Prescription getById(Long id) {
+        return prescriptionRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Prescription not found with id: " + id));
     }
 
-    private static Specification<Appointment> hasStatus(com.clinic.enums.AppointmentStatus status) {
-        return (root, query, cb) -> status == null ? null : cb.equal(root.get("status"), status);
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Prescription> getAll(Pageable pageable) {
+        return prescriptionRepository.findAll(pageable);
     }
 
-    private static Specification<Appointment> dateGreaterThanOrEqual(java.time.LocalDate from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentDate"), from);
+    @Override
+    public void delete(Long id) {
+        Prescription prescription = getById(id);
+        prescriptionRepository.delete(prescription);
     }
 
-    private static Specification<Appointment> dateLessThanOrEqual(java.time.LocalDate to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentDate"), to);
-    }
-
-    private static Specification<Appointment> startGreaterThanOrEqual(java.time.LocalTime from) {
-        return (root, query, cb) -> from == null ? null : cb.greaterThanOrEqualTo(root.get("appointmentStart"), from);
-    }
-
-    private static Specification<Appointment> startLessThanOrEqual(java.time.LocalTime to) {
-        return (root, query, cb) -> to == null ? null : cb.lessThanOrEqualTo(root.get("appointmentStart"), to);
+    private void validatePrescription(Prescription prescription) {
+        if (prescription == null) {
+            throw new IllegalArgumentException("Prescription must not be null");
+        }
+        if (prescription.getAppointment() == null || prescription.getAppointment().getId() == null) {
+            throw new IllegalArgumentException("Appointment must not be null");
+        }
     }
 }
+
+package com.clinic.service.impl;
+
+import com.clinic.entity.Appointment;
+import com.clinic.entity.Invoice;
+import com.clinic.enums.PaymentStatus;
+import com.clinic.filter.InvoiceFilter;
+import com.clinic.repository.AppointmentRepository;
+import com.clinic.repository.InvoiceRepository;
+import com.clinic.service.InvoiceService;
+import com.clinic.specification.InvoiceSpecification;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class InvoiceServiceImpl implements InvoiceService {
+
+    private final InvoiceRepository invoiceRepository;
+    private final AppointmentRepository appointmentRepository;
+
+    @Override
+    public Invoice create(Invoice invoice) {
+        validateInvoice(invoice);
+
+        Long appointmentId = invoice.getAppointment().getId();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + appointmentId));
+
+        invoice.setAppointment(appointment);
+
+        if (invoice.getPaymentStatus() == null) {
+            invoice.setPaymentStatus(PaymentStatus.PENDING);
+        }
+
+        if (invoice.getTotalAmount() == null) {
+            invoice.setTotalAmount(calculateTotal(invoice));
+        }
+
+        return invoiceRepository.save(invoice);
+    }
+
+    @Override
+    public Invoice update(Long id, Invoice invoice) {
+        validateInvoice(invoice);
+
+        Invoice existing = getById(id);
+
+        Long appointmentId = invoice.getAppointment().getId();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new EntityNotFoundException("Appointment not found with id: " + appointmentId));
+
+        existing.setAppointment(appointment);
+        existing.setDoctorFee(invoice.getDoctorFee());
+        existing.setAppointmentCost(invoice.getAppointmentCost());
+        existing.setPaymentMethod(invoice.getPaymentMethod());
+        existing.setPaymentStatus(invoice.getPaymentStatus() != null ? invoice.getPaymentStatus() : existing.getPaymentStatus());
+        existing.setTotalAmount(calculateTotal(invoice));
+
+        return invoiceRepository.save(existing);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Invoice getById(Long id) {
+        return invoiceRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Invoice not found with id: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Invoice> getAll(InvoiceFilter filter, Pageable pageable) {
+        if (filter == null) {
+            filter = new InvoiceFilter();
+        }
+        return invoiceRepository.findAll(InvoiceSpecification.withFilter(filter), pageable);
+    }
+
+    @Override
+    public void delete(Long id) {
+        Invoice invoice = getById(id);
+        invoiceRepository.delete(invoice);
+    }
+
+    @Override
+    public Invoice markAsPaid(Long id) {
+        Invoice invoice = getById(id);
+        invoice.setPaymentStatus(PaymentStatus.PAID);
+        return invoiceRepository.save(invoice);
+    }
+
+    private void validateInvoice(Invoice invoice) {
+        if (invoice == null) {
+            throw new IllegalArgumentException("Invoice must not be null");
+        }
+        if (invoice.getAppointment() == null || invoice.getAppointment().getId() == null) {
+            throw new IllegalArgumentException("Appointment must not be null");
+        }
+        if (invoice.getDoctorFee() != null && invoice.getDoctorFee().compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Doctor fee must be non-negative");
+        }
+        if (invoice.getAppointmentCost() != null && invoice.getAppointmentCost().compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Appointment cost must be non-negative");
+        }
+    }
+
+    private BigDecimal calculateTotal(Invoice invoice) {
+        BigDecimal doctorFee = invoice.getDoctorFee() == null ? BigDecimal.ZERO : invoice.getDoctorFee();
+        BigDecimal appointmentCost = invoice.getAppointmentCost() == null ? BigDecimal.ZERO : invoice.getAppointmentCost();
+        return doctorFee.add(appointmentCost);
+    }
+}
+
