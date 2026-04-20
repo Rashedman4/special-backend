@@ -1,6 +1,6 @@
 BEGIN;
 
--- Clean reset (dev only)
+-- Clean reset 
 TRUNCATE TABLE
   event_attendees,
   events,
@@ -17,7 +17,6 @@ TRUNCATE TABLE
   users
 RESTART IDENTITY CASCADE;
 
--- =========================
 -- USERS
 -- =========================
 INSERT INTO users (id, email, username, password, role, created_at) VALUES
@@ -28,7 +27,6 @@ INSERT INTO users (id, email, username, password, role, created_at) VALUES
   (5, 'omar@tokensphere.com',  'omar',  'omar123',  'user',  '2025-12-27 12:23:48.500521-08'),
   (6, 'lina@tokensphere.com',  'lina',  'lina123',  'user',  '2025-12-29 12:23:48.500521-08');
 
--- =========================
 -- PROFILES
 -- =========================
 INSERT INTO profiles (user_id, display_name, avatar_url, bio, created_at) VALUES
@@ -39,7 +37,6 @@ INSERT INTO profiles (user_id, display_name, avatar_url, bio, created_at) VALUES
   (5, 'Omar Hasan',        NULL, 'Security enthusiast.',             '2025-12-27 12:23:48.500521-08'),
   (6, 'Lina Khaled',       NULL, 'Product thinker. Likes polls.',    '2025-12-29 12:23:48.500521-08');
 
--- =========================
 -- WALLETS
 -- =========================
 INSERT INTO wallets (id, user_id, balance, created_at) VALUES
@@ -50,7 +47,6 @@ INSERT INTO wallets (id, user_id, balance, created_at) VALUES
   (5, 5, 500,  '2025-12-27 12:23:48.500521-08'),
   (6, 6, 40,   '2025-12-29 12:23:48.500521-08');
 
--- =========================
 -- COMMUNITIES
 -- =========================
 INSERT INTO communities (id, name, description, creator_id, min_credits_required, status, created_at) VALUES
@@ -58,7 +54,6 @@ INSERT INTO communities (id, name, description, creator_id, min_credits_required
   (2, 'Cybersecurity',   'Talk security, tools, and best practices.',        5, 50,  'active', '2025-12-28 12:23:48.500521-08'),
   (3, 'UI/UX Designers', 'Design critiques, resources, and inspiration.',    4, 20,  'locked', '2025-12-30 12:23:48.500521-08');
 
--- =========================
 -- COMMUNITY MEMBERS
 -- =========================
 INSERT INTO community_members (id, community_id, user_id, role, joined_at) VALUES
@@ -75,7 +70,6 @@ INSERT INTO community_members (id, community_id, user_id, role, joined_at) VALUE
   (14, 1, 1, 'member', '2026-01-18 09:38:51.245769-08'),
   (15, 2, 1, 'member', '2026-01-18 15:26:38.237082-08');
 
--- =========================
 -- POSTS (author_id, community_id, type, content, likes_count, comments_count, created_at)
 -- =========================
 INSERT INTO posts (id, author_id, community_id, type, content, likes_count, comments_count, created_at) VALUES
@@ -90,7 +84,6 @@ INSERT INTO posts (id, author_id, community_id, type, content, likes_count, comm
   (31, 1, NULL, 'post','hhygfhg',                                                   0, 0, '2026-01-18 09:54:01.105575-08'),
   (32, 1, NULL, 'post','dsd',                                                       0, 0, '2026-01-18 16:34:27.277586-08');
 
--- =========================
 -- POLLS
 -- =========================
 INSERT INTO polls (post_id, question, ends_at) VALUES
@@ -111,7 +104,6 @@ INSERT INTO poll_votes (poll_id, user_id, option_id, created_at) VALUES
   (4,  5, 2,  '2026-01-06 12:23:48.500521-08'),
   (28, 1, 10, '2026-01-18 09:39:03.490534-08');
 
--- =========================
 -- EVENTS + ATTENDEES
 -- =========================
 INSERT INTO events (post_id, title, description, start_date, end_date, location) VALUES
@@ -126,7 +118,6 @@ INSERT INTO event_attendees (event_id, user_id, created_at) VALUES
   (5, 3, '2026-01-07 12:23:48.500521-08'),
   (5, 1, '2026-01-18 09:51:49.389803-08');
 
--- =========================
 -- POST LIKES
 -- =========================
 INSERT INTO post_likes (post_id, user_id, created_at) VALUES
@@ -139,7 +130,6 @@ INSERT INTO post_likes (post_id, user_id, created_at) VALUES
   (6, 2, '2026-01-04 13:23:48.500521-08'),
   (3, 1, '2026-01-18 09:38:10.158896-08');
 
--- =========================
 -- TRANSACTIONS
 -- =========================
 INSERT INTO transactions (id, from_user_id, to_user_id, amount, description, created_at) VALUES
